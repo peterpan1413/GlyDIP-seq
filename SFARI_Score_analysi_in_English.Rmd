@@ -1,0 +1,132 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code.
+
+## **Analysis Workflow**
+1. **Data Preparation** (Remove duplicate SYMBOLs)
+2. **Bar Plot of SFARI Scores for Gly/OxiDIP-seq**
+3. **Venn Diagram**
+4. **Generate Common Genes File between Gly/OxiDIP-seq and SFARI Genes**
+5. **Extract Information of Common Genes between GlyDIP-seq and SFARI**
+
+---
+
+## **Step 1: Data Preparation (Remove duplicate SYMBOLs)**
+```{r}
+# Load required library
+library(tidyverse)
+
+# Load datasets
+glydip_data <- read.csv("glydip_DE_genes.csv")
+oxidip_data <- read.csv("oxidip_DE_genes.csv")
+
+# Remove duplicate SYMBOLs (keep first occurrence)
+glydip_data_unique <- glydip_data[!duplicated(glydip_data$SYMBOL), ]
+oxidip_data_unique <- oxidip_data[!duplicated(oxidip_data$SYMBOL), ]
+
+# Save the results
+write.csv(glydip_data_unique, "glydip_gene_unique.csv", row.names = FALSE)
+write.csv(oxidip_data_unique, "oxidip_gene_unique.csv", row.names = FALSE)
+```
+
+## **Step 2: Bar Plot of SFARI Scores for Gly/OxiDIP-seq**
+```{r}
+# Load required library
+library(tidyverse)
+
+# Load SFARI gene list
+sfari_genes <- read.csv("SFARI-Gene_genes_01-13-2025release_01-23-2025export.csv")
+
+# Load GlyDIP-seq and OxiDIP-seq data
+oxidip_genes <- read.csv("oxidip_DE_genes.csv")
+glydip_genes <- read.csv("glydip_DE_genes.csv")
+
+# Convert SFARI scores to factors
+sfari_genes <- sfari_genes %>%
+  mutate(SFARI_score = as.factor(SFARI_score))
+
+# Count Oxi/Gly positive genes per SFARI score
+sfari_with_signals <- sfari_genes %>%
+  mutate(
+    Oxi_posi = ifelse(SYMBOL %in% oxidip_genes$SYMBOL, 1, 0),
+    Gly_posi = ifelse(SYMBOL %in% glydip_genes$SYMBOL, 1, 0)
+  ) %>%
+  group_by(SFARI_score) %>%
+  summarise(
+    Total_genes = n(),
+    Oxi_count = sum(Oxi_posi),
+    Gly_count = sum(Gly_posi)
+  )
+```
+
+## **Step 3: Venn Diagram**
+```{r}
+# Install & load required library
+if (!requireNamespace("VennDiagram", quietly = TRUE)) {
+  install.packages("VennDiagram")
+}
+library(VennDiagram)
+
+# Extract unique SYMBOLs
+oxidip_symbols <- unique(oxidip_genes$SYMBOL)
+glydip_symbols <- unique(glydip_genes$SYMBOL)
+sfari_symbols <- unique(sfari_genes$SYMBOL)
+
+# Create Venn diagram
+venn.plot <- draw.triple.venn(
+  area1 = length(oxidip_symbols),
+  area2 = length(glydip_symbols),
+  area3 = length(sfari_symbols),
+  n12 = length(intersect(oxidip_symbols, glydip_symbols)),
+  n23 = length(intersect(glydip_symbols, sfari_symbols)),
+  n13 = length(intersect(oxidip_symbols, sfari_symbols)),
+  n123 = length(intersect(intersect(oxidip_symbols, glydip_symbols), sfari_symbols)),
+  category = c("Oxidip Genes", "Glydip Genes", "SFARI Genes"),
+  fill = c("blue", "green", "red")
+)
+
+# Display the plot
+grid.newpage()
+grid.draw(venn.plot)
+
+# Save as PDF
+pdf("VennDiagram_ThreeSets.pdf", width = 8, height = 6)
+grid.draw(venn.plot)
+dev.off()
+```
+
+## **Step 4: Generate Common Genes File between Gly/OxiDIP-seq and SFARI Genes**
+```{r}
+# Extract common SYMBOLs
+oxidip_common_symbols <- intersect(oxidip_genes$SYMBOL, sfari_genes$SYMBOL)
+glydip_common_symbols <- intersect(glydip_genes$SYMBOL, sfari_genes$SYMBOL)
+
+# Save results as CSV
+write.csv(oxidip_common_symbols, "oxidip_common_symbols.csv", row.names = FALSE)
+write.csv(glydip_common_symbols, "glydip_common_symbols.csv", row.names = FALSE)
+
+```
+
+## **Step 5: Extract Information of Common Genes between GlyDIP-seq and SFARI**
+```{r}
+# Load data
+glydip_info <- read.csv("glydip_DE_genes.csv")
+glydip_common <- read.csv("GlyDIP_DE_common_symbols.csv")
+
+# Extract unique SYMBOLs
+common_symbols <- unique(glydip_common$SYMBOL)
+
+# Extract matching rows
+matched_rows <- glydip_info[glydip_info$SYMBOL %in% common_symbols, ]
+
+# Save results as CSV
+write.csv(matched_rows, "Matched_GlyDIP_DE_info.csv", row.names = FALSE)
+
+# Display extracted results
+print(head(matched_rows))  # Show first few rows
+print(paste("Number of matched rows:", nrow(matched_rows)))
+```
+

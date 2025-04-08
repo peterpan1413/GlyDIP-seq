@@ -1,1 +1,61 @@
 
+# ===============================
+# GlyDIP-seq Downsampling Analysis
+# Gene percent vs. number of reads
+# ===============================
+
+```{r}
+# Load required packages
+library(dplyr)
+library(ggplot2)
+```
+
+```{r}
+# Load downsampling result files for each sample
+df1 <- read.csv("D:/GlyDIP_x100/downsampling/GM_MG1_results.csv") %>% mutate(sample = "GM_MG1")
+df2 <- read.csv("D:/GlyDIP_x100/downsampling/GM_PBS1_x70_results.csv") %>% mutate(sample = "GM_PBS1")
+df3 <- read.csv("D:/GlyDIP_x100/downsampling/AG_MG1_x70_results.csv") %>% mutate(sample = "AG_MG1")
+df4 <- read.csv("D:/GlyDIP_x100/downsampling/AG_MG2_results.csv") %>% mutate(sample = "AG_MG2")
+df6 <- read.csv("D:/GlyDIP_x100/downsampling/AG_PBS2_x70_results.csv") %>% mutate(sample = "AG_PBS2")
+
+# Combine all data into one data frame
+df_all <- bind_rows(df1, df2, df3, df4, df6)
+```
+
+
+```{r}
+# --- Plot 1: Line + Point plot per sample ---
+p1 <- ggplot(df_all, aes(x = Number_of_reads, y = genepercent, color = sample)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Gene Percent vs Number of Reads",
+    x = "Number of Reads",
+    y = "Gene Percent (%)"
+  ) +
+  scale_x_continuous(limits = c(0, 7.5e7)) +
+  theme_minimal()
+
+print(p1)
+```
+
+```{r}
+# --- Plot 2: Combined smoothed curve ---
+p2 <- ggplot(df_all, aes(x = Number_of_reads, y = genepercent)) +
+  geom_point(color = "black", size = 2, alpha = 0.7) +
+  geom_smooth(method = "loess", se = FALSE, color = "black", size = 1.2) +
+  labs(
+    title = "Gene Percent vs Number of Reads",
+    x = "Number of Reads",
+    y = "Gene Percent (%)"
+  ) +
+  scale_x_continuous(limits = c(0, 7.5e7)) +
+  scale_y_continuous(limits = c(0, 100)) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+print(p2)
+
+# Save to PDF
+ggsave("D:/GlyDIP_x100/downsampling/gene_percent_vs_reads.pdf", plot = p2, width = 7, height = 5)
+```

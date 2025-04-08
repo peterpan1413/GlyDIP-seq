@@ -1,0 +1,141 @@
+# Strand-specific TSS Analysis of GlyDIP-seq Signal
+
+This repository provides a reproducible workflow to evaluate **strand-specific accumulation of GlyDIP-seq signals** around transcription start sites (TSSs) in the human genome.
+
+---
+
+## Overview
+
+The analysis includes:
+
+1. Extraction of TSS positions from a GTF annotation file.
+2. Separation of TSSs into **transcribed** and **non-transcribed** strands.
+3. Signal correction of GlyDIP-seq bigWig files using input normalization.
+4. Matrix generation of signal around TSSs using `computeMatrix`.
+5. Visualization of average profiles around TSSs using R.
+
+---
+
+## 🛠 Requirements
+
+- `awk`, `sed`, `gunzip`
+- [deepTools](https://deeptools.readthedocs.io/) (v3.5.1 or later)
+- `R` (v4.2+)
+  - Packages: `ggplot2`, `data.table`
+
+---
+
+## Step-by-step Instructions
+
+### 1. Generate TSS BED file from GTF
+
+```bash
+awk '$3 == "transcript"' Homo_sapiens.GRCh37.87.gtf | \
+awk '{if ($7 == "+") print $1, $4, $4+1, $10, ".", $7; else print $1, $5-1, $5, $10, ".", $7;}' OFS="\t" | \
+sed 's/"//g;s/;//g' > TSS_positions.bed
+```
+
+### 2. Split TSS by strand
+
+```bash
+awk '{if ($6 == "+") print $0}' TSS_positions.bed > TSS_transcribed.bed
+awk '{if ($6 == "-") print $0}' TSS_positions.bed > TSS_nontranscribed.bed
+```
+
+---
+
+### 3. Normalize GlyDIP-seq signal by input using `bigwigCompare`
+
+```bash
+bigwigCompare -b1 GM_MG1_x70_sort.bw -b2 input_GM_MG1.bw \
+  --operation subtract --binSize 10 \
+  -o GM_MG1_x70_corrected.bw
+```
+
+---
+
+### 4. Compute signal matrix around TSS
+
+```bash
+computeMatrix reference-point \
+  --referencePoint TSS \
+  -R TSS_transcribed.bed \
+  -S GM_MG1_x70_corrected.bw \
+  --beforeRegionStartLength 2000 \
+  --afterRegionStartLength 2000 \
+  --binSize 10 \
+  -o normalized_matrix_TSS_transcribed_corrected.gz
+
+computeMatrix reference-point \
+  --referencePoint TSS \
+  -R TSS_nontranscribed.bed \
+  -S GM_MG1_x70_corrected.bw \
+  --beforeRegionStartLength 2000 \
+  --afterRegionStartLength 2000 \
+  --binSize 10 \
+  -o normalized_matrix_TSS_nontranscribed_corrected.gz
+```
+
+### 5. Decompress the matrix
+
+```bash
+gunzip -c normalized_matrix_TSS_transcribed_corrected.gz > normalized_matrix_TSS_transcribed_corrected.txt
+gunzip -c normalized_matrix_TSS_nontranscribed_corrected.gz > normalized_matrix_TSS_nontranscribed_corrected.txt
+```
+
+---
+
+### 6. Plot signal profiles in R
+
+```r
+library(ggplot2)
+library(data.table)
+
+transcribed_data <- fread("normalized_matrix_TSS_transcribed_corrected.txt", header = FALSE, sep = "\t")
+nontranscribed_data <- fread("normalized_matrix_TSS_nontranscribed_corrected.txt", header = FALSE, sep = "\t")
+
+transcribed_signal <- transcribed_data[, 7:ncol(transcribed_data), with=FALSE]
+nontranscribed_signal <- nontranscribed_data[, 7:ncol(nontranscribed_data), with=FALSE]
+
+transcribed_signal <- as.data.frame(lapply(transcribed_signal, as.numeric))
+nontranscribed_signal <- as.data.frame(lapply(nontranscribed_signal, as.numeric))
+
+transcribed_avg <- colMeans(transcribed_signal, na.rm=TRUE)
+nontranscribed_avg <- colMeans(nontranscribed_signal, na.rm=TRUE)
+
+bin_size <- 10
+num_bins <- length(transcribed_avg)
+x_values <- seq(-2000, 2000, length.out = num_bins)
+
+df <- data.frame(
+  Bin = x_values,
+  Transcribed = transcribed_avg,
+  NonTranscribed = nontranscribed_avg
+)
+
+p <- ggplot(df, aes(x = Bin)) +
+  geom_line(aes(y = Transcribed, color = "Transcribed Strand"), size=1) +
+  geom_line(aes(y = NonTranscribed, color = "Non-Transcribed Strand"), size=1) +
+  scale_color_manual(values = c("Transcribed Strand" = "brown", "Non-Transcribed Strand" = "pink")) +
+  scale_x_continuous(breaks = c(-2000, 0, 2000), labels = c("-2kb", "TSS", "+2kb")) +
+  labs(x = "Distance from TSS", y = "Normalized GlyDIP-seq coverage (/Input)", color = NULL) +
+  guides(color = guide_legend(reverse = TRUE)) +
+  theme_minimal() +
+  theme(legend.position = c(0.85, 0.9), legend.title = element_blank())
+
+ggsave("TSS_Signal_Profile.pdf", plot = p, width = 6, height = 4)
+```
+
+---
+
+## Output
+
+The final figure shows average GlyDIP-seq signal normalized to input around TSSs, plotted separately for transcribed and non-transcribed strands across ±2 kb.
+
+---
+
+## Notes
+
+- Reference genome: **hg19 (GRCh37.87)**
+- Input normalization is done via **subtraction**, but log2 ratio is also an option.
+- Make sure your signal files and TSS annotation are in the **same genome build**.

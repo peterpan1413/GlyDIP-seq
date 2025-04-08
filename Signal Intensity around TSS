@@ -1,1 +1,68 @@
+# Gene Body Profile of Gly/OxiDIP-seq Peaks using ChIPseeker
+
+This R script demonstrates how to visualize peak enrichment profiles of Gly/OxiDIP-seq data over gene bodies using **ChIPseeker** and **TxDb** annotations for human (hg19).
+
+---
+
+## Requirements
+
+R packages:
+- `ChIPseeker`
+- `GenomicRanges`
+- `TxDb.Hsapiens.UCSC.hg19.knownGene`
+
+---
+
+## Script
+
+```r
+# Load required libraries
+library(GenomicRanges)
+library(ChIPseeker)
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+
+# Load TxDb annotation object
+txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
+
+# Load peak file
+peak <- readPeakFile(
+  "AGI04_11_S11_L003_clean_pe.MDBG.bam_peaks.txt",
+  header = FALSE,
+  sep = "\t"
+)
+
+# Output as PDF
+pdf("OxiDIP_IgG_TSS_signal_intensity.pdf", width = 6, height = 5)
+
+# Plot gene body profile (TSS ± 20% gene length)
+plotPeakProf2(
+  peak = peak,
+  upstream = rel(0.2),
+  downstream = rel(0.2),
+  conf = 0.95,
+  by = "gene",
+  type = "body",
+  nbin = 500,
+  TxDb = txdb,
+  weightCol = "V7",        # Column V7 = signalValue (MACS3 score)
+  ignore_strand = FALSE    # Keep strand specificity
+)
+
+# Close PDF output
+dev.off()
+```
+
+---
+
+## Notes
+
+- This script plots the average distribution of peak intensities across gene bodies, centered on TSS and TES.
+- The `weightCol = "V7"` argument uses MACS3's signal value column as weighting for peak strength.
+- Ensure the column structure of your peak file matches the `V7` indexing (e.g., 7th column = signalValue).
+
+---
+
+## Output
+
+The resulting PDF shows **signal enrichment profiles across gene bodies** for the provided OxiDIP-seq peaks.
 

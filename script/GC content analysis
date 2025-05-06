@@ -1,0 +1,124 @@
+# GC Content vs log2(8-oxo/Input) Plot
+
+This repository provides a step-by-step pipeline to visualize the relationship between **GC content** and **enrichment of oxidative DNA damage (8-oxo-dG)** relative to input control using BAM files and BED-defined genomic regions.
+
+---
+
+## Dependencies
+
+```bash
+pip install scikit-misc
+pip install plotnine
+```
+
+---
+
+## Pipeline Overview
+
+### 1. Extract reads overlapping target regions (e.g., promoters)
+
+```bash
+bedtools intersect -abam AGI04_6_S6_L003_clean_pe.MDBG.sorted.bam -b promoter_agmg2_fixed.bed > extracted.bam
+```
+
+---
+
+### 2. Calculate read coverage for extracted regions
+
+```bash
+bedtools coverage -a promoter_agmg2_fixed.bed -b extracted.bam > coverage.txt
+```
+
+Repeat for input control BAM:
+```bash
+bedtools coverage -a promoter_agmg2_fixed.bed -b input.bam > input_coverage.txt
+```
+
+---
+
+### 3. Compute GC content per region
+
+```python
+import pybedtools
+from Bio.SeqUtils import gc_fraction
+import pandas as pd
+
+# Input files
+bed_file = "promoter_agmg3_cleaned.bed"
+reference_fasta = "hg19.fa"
+
+# Calculate GC content
+bed = pybedtools.BedTool(bed_file)
+fasta_sequences = bed.sequence(fi=reference_fasta, s=False)
+
+gc_content_data = []
+with open(fasta_sequences.seqfn) as fasta:
+    for line in fasta:
+        if line.startswith(">"):
+            region = line.strip().lstrip(">")
+        else:
+            gc = gc_fraction(line.strip()) * 100
+            chrom, pos = region.split(":")
+            start, end = map(int, pos.split("-"))
+            gc_content_data.append([chrom, start, end, gc])
+
+gc_df = pd.DataFrame(gc_content_data, columns=["chrom", "start", "end", "GC Content (%)"])
+gc_df.to_csv("AG_MG3_gc.txt", sep="\t", index=False)
+print("GC content saved to: AG_MG3_gc.txt")
+```
+
+---
+
+### 4. Merge coverage and GC data (manual or pandas merge)
+
+Manually or via Excel:
+- Add log2-transformed signal:
+```excel
+=IF(OR(D2<=0, E2<=0), "Invalid Input", LOG(E2/I2, 2))
+```
+
+---
+
+### 5. Plot GC content vs log2(8-oxo/Input)
+
+```python
+import pandas as pd
+from plotnine import (
+    ggplot, aes, geom_smooth, labs, theme_minimal, theme,
+    element_text, scale_x_continuous
+)
+
+# Load merged data
+data = pd.read_csv("gc_vs_log2.txt", sep="\t")
+
+# Create the plot
+plot = (
+    ggplot(data, aes(x="GC Content (%)", y="log2(8-oxo/Input)")) +
+    geom_smooth(method="loess", span=0.5, se=True, color="blue", fill="lightblue") +
+    labs(
+        x="GC Content (%)",
+        y="log2(8-oxo / Input)",
+        title="GC Content vs log2(8-oxo / Input)"
+    ) +
+    scale_x_continuous(limits=(50, 65)) +
+    theme_minimal() +
+    theme(
+        axis_title=element_text(size=14),
+        axis_text=element_text(size=12),
+        plot_title=element_text(size=16, weight="bold")
+    )
+)
+
+# Save and show
+plot.save("gc_content_vs_log2_binned_smooth_limited.pdf")
+print(plot)
+```
+
+---
+
+## Notes
+
+- Ensure all BED, BAM, and FASTA files are aligned to the **same genome build** (e.g., hg19).
+- Log2 transformation assumes non-zero coverage in both 8-oxo and input samples.
+
+

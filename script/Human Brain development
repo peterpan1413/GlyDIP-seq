@@ -1,0 +1,96 @@
+This repository contains R scripts to visualize the temporal expression dynamics of ASD-related genes across four brain regions:
+
+AMY: Amygdala
+
+HIP: Hippocampus
+
+OFC: Orbitofrontal Cortex
+
+STC: Superior Temporal Cortex
+
+Gene expression data (RPKM) are derived from the BrainSpan dataset and are grouped by experimental categories:
+
+GlyDIP-seq
+
+OxiDIP-seq
+
+Common (genes found in both GlyDIP and OxiDIP groups)
+
+
+📂 Input Files
+CSV files should follow the format:
+
+Rows: Gene symbols (SYMBOL)
+
+Columns: Time points (in days)
+
+Files:
+
+GlyDIP_<REGION>.csv
+
+OxiDIP_<REGION>.csv
+
+Common_<REGION>.csv
+(e.g., GlyDIP_AMY.csv, OxiDIP_HIP.csv, etc.)
+
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tibble)
+
+# 1. Load and reshape the data for GlyDIP, OxiDIP, and Common
+data_random <- read.csv("GlyDIP_<REGION>.csv", header=TRUE, row.names=1, check.names=FALSE) %>%
+  rownames_to_column("SYMBOL") %>%
+  pivot_longer(-SYMBOL, names_to = "Age_Days", values_to = "Signal_Intensity") %>%
+  mutate(Age_Days = as.numeric(Age_Days), Dataset = "GlyDIP-seq")
+
+data_common <- read.csv("Common_<REGION>.csv", header=TRUE, row.names=1, check.names=FALSE) %>%
+  rownames_to_column("SYMBOL") %>%
+  pivot_longer(-SYMBOL, names_to = "Age_Days", values_to = "Signal_Intensity") %>%
+  mutate(Age_Days = as.numeric(Age_Days), Dataset = "Common")
+
+data_oxi <- read.csv("OxiDIP_<REGION>.csv", header=TRUE, row.names=1, check.names=FALSE) %>%
+  rownames_to_column("SYMBOL") %>%
+  pivot_longer(-SYMBOL, names_to = "Age_Days", values_to = "Signal_Intensity") %>%
+  mutate(Age_Days = as.numeric(Age_Days), Dataset = "OxiDIP-seq")
+
+# 2. Combine datasets
+data_long <- bind_rows(data_random, data_common, data_oxi)
+
+# 3. Filter by age range
+filtered_data <- data_long %>%
+  filter(Age_Days >= 56 & Age_Days <= 14600)
+
+# 4. Calculate group-level mean and SEM
+summary_data <- filtered_data %>%
+  group_by(Age_Days, Dataset) %>%
+  summarise(
+    Mean_Intensity = mean(Signal_Intensity, na.rm=TRUE),
+    SEM_Intensity = sd(Signal_Intensity, na.rm=TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+
+# 5. Define x-axis tick marks (log10 scale with Day 182 labeled)
+x_axis_labels <- c(100, 1000, 10000, 182)
+
+# 6. Plot
+p <- ggplot(summary_data, aes(x = Age_Days, y = Mean_Intensity, color = Dataset, fill = Dataset)) +
+  geom_point(size = 2, alpha = 0.8) +
+  geom_smooth(method = "loess", span = 0.3, se = FALSE, size = 1.2) +
+  geom_ribbon(aes(ymin = Mean_Intensity - SEM_Intensity,
+                  ymax = Mean_Intensity + SEM_Intensity),
+              stat = "smooth", method = "loess", span = 0.3, alpha = 0.3) +
+  scale_x_log10(breaks = x_axis_labels, labels = x_axis_labels) +
+  scale_color_manual(values = c("GlyDIP-seq" = "red", "OxiDIP-seq" = "blue", "Common" = "green"),
+                     breaks = c("GlyDIP-seq", "OxiDIP-seq", "Common")) +
+  scale_fill_manual(values = c("GlyDIP-seq" = "pink", "OxiDIP-seq" = "lightblue", "Common" = "lightgreen"),
+                    breaks = c("GlyDIP-seq", "OxiDIP-seq", "Common")) +
+  geom_vline(xintercept = x_axis_labels, linetype = "dashed") +
+  geom_vline(xintercept = 182, linetype = "solid", color = "black", size = 1) +
+  labs(x = "Age (Days)", y = "Signal Intensity") +
+  theme_minimal() +
+  theme(legend.title = element_blank(), legend.position = "bottom")
+
+# 7. Save to PDF
+ggsave("ASD_<REGION>_Expression.pdf", plot = p, width = 10, height = 6)
